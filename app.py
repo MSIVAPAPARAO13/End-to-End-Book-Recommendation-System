@@ -13,36 +13,48 @@ class Recommendation:
 
     def __init__(self, app_config=AppConfiguration()):
         try:
-            self.recommendation_config = app_config.get_recommendation_config()
+            self.config = app_config.get_recommendation_config()
         except Exception as e:
             raise AppException(e, sys)
 
-    # 🔹 Recommend Books
-    def recommend_book(self, book_name):
+    # 🔹 Load model + data safely
+    def load_data(self):
         try:
-            with open(self.recommendation_config.trained_model_path, 'rb') as f:
+            with open(self.config.trained_model_path, 'rb') as f:
                 model = pickle.load(f)
 
-            with open(self.recommendation_config.book_pivot_serialized_objects, 'rb') as f:
+            with open(self.config.book_pivot_serialized_objects, 'rb') as f:
                 book_pivot = pickle.load(f)
 
-            with open(self.recommendation_config.final_rating_serialized_objects, 'rb') as f:
+            with open(self.config.final_rating_serialized_objects, 'rb') as f:
                 final_rating = pickle.load(f)
 
-            # Check book exists
+            return model, book_pivot, final_rating
+
+        except Exception:
+            return None, None, None
+
+    # 🔹 Recommendation logic
+    def recommend_book(self, book_name):
+        try:
+            model, book_pivot, final_rating = self.load_data()
+
+            if model is None:
+                return [], []
+
             if book_name not in book_pivot.index:
                 return [], []
 
-            # Get index
+            # Get index of selected book
             book_id = np.where(book_pivot.index == book_name)[0][0]
 
-            # Get recommendations
+            # ✅ FIXED (no pandas error)
             distances, indices = model.kneighbors(
-                book_pivot.iloc[book_id, :].values.reshape(1, -1),
+                book_pivot.iloc[book_id].values.reshape(1, -1),
                 n_neighbors=6
             )
 
-            indices = indices.flatten()   # 🔥 FIX (IMPORTANT)
+            indices = indices.flatten()
 
             recommended_books = []
             posters = []
@@ -59,18 +71,22 @@ class Recommendation:
         except Exception as e:
             raise AppException(e, sys)
 
-    # 🔹 Train Pipeline
-    def train_engine(self):
-        obj = TrainingPipeline()
-        obj.start_training_pipeline()
-        st.success("Training Completed!")
+    # 🔹 Train model
+    def train_model(self):
+        try:
+            pipeline = TrainingPipeline()
+            pipeline.start_training_pipeline()
+            st.success("✅ Training completed successfully!")
+        except Exception as e:
+            st.error("❌ Training failed")
+            raise AppException(e, sys)
 
-    # 🔹 Display Results
-    def show_recommendations(self, selected_book):
-        books, posters = self.recommend_book(selected_book)
+    # 🔹 Show recommendations
+    def show_recommendations(self, book_name):
+        books, posters = self.recommend_book(book_name)
 
         if not books:
-            st.error("Book not found!")
+            st.warning("⚠️ Train the model first or select a valid book.")
             return
 
         cols = st.columns(5)
@@ -82,28 +98,36 @@ class Recommendation:
                 st.image(posters[i])
 
 
-# ================= UI =================
+# ================= STREAMLIT UI =================
 
 if __name__ == "__main__":
 
     st.title("📚 Book Recommender System")
-    st.write("Collaborative Filtering using KNN")
+    st.write("KNN-based Collaborative Filtering")
 
     obj = Recommendation()
 
-    # Train button
-    if st.button("Train Model"):
-        obj.train_engine()
+    # 🔹 Train button
+    if st.button("🚀 Train Model"):
+        obj.train_model()
 
-    # Load book names
-    with open("artifacts/serialized_objects/book_names.pkl", "rb") as f:
-        book_names = pickle.load(f)
+    # 🔹 Load book names safely
+    try:
+        with open("artifacts/serialized_objects/book_names.pkl", "rb") as f:
+            book_names = pickle.load(f)
+            book_list = book_names.tolist()  # ✅ FIXED
+    except:
+        book_list = []
 
+    if not book_list:
+        book_list = ["No books available"]
+
+    # 🔹 Dropdown
     selected_book = st.selectbox(
         "Select a book",
-        book_names
+        book_list
     )
 
-    # Recommend button
-    if st.button("Show Recommendations"):
+    # 🔹 Recommend button
+    if st.button("📖 Show Recommendations"):
         obj.show_recommendations(selected_book)

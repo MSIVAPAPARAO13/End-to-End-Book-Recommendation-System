@@ -2,6 +2,6 @@ pandas==1.3.5
 numpy==1.21.6
 scikit-learn==1.0.2
 scipy==1.7.3
-streamlit==1.25.0
+streamlit==1.23.1   # ✅ compatible with Python 3.7
 PyYAML==6.0
 -e .
