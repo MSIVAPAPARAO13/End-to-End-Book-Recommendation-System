@@ -17,28 +17,7 @@ class Recommendation:
         except Exception as e:
             raise AppException(e, sys)
 
-    # 🔹 Fetch Posters
-    def fetch_poster(self, suggestions):
-        try:
-            with open(self.recommendation_config.book_pivot_serialized_objects, 'rb') as f:
-                book_pivot = pickle.load(f)
-
-            with open(self.recommendation_config.final_rating_serialized_objects, 'rb') as f:
-                final_rating = pickle.load(f)
-
-            book_names = [book_pivot.index[i] for i in suggestions[0]]
-
-            poster_urls = []
-            for name in book_names:
-                idx = np.where(final_rating['title'] == name)[0][0]
-                poster_urls.append(final_rating.iloc[idx]['image_url'])
-
-            return poster_urls
-
-        except Exception as e:
-            raise AppException(e, sys)
-
-    # 🔹 Recommendation Logic
+    # 🔹 Recommend Books
     def recommend_book(self, book_name):
         try:
             with open(self.recommendation_config.trained_model_path, 'rb') as f:
@@ -47,20 +26,35 @@ class Recommendation:
             with open(self.recommendation_config.book_pivot_serialized_objects, 'rb') as f:
                 book_pivot = pickle.load(f)
 
+            with open(self.recommendation_config.final_rating_serialized_objects, 'rb') as f:
+                final_rating = pickle.load(f)
+
+            # Check book exists
             if book_name not in book_pivot.index:
                 return [], []
 
+            # Get index
             book_id = np.where(book_pivot.index == book_name)[0][0]
 
-            distances, suggestions = model.kneighbors(
+            # Get recommendations
+            distances, indices = model.kneighbors(
                 book_pivot.iloc[book_id, :].values.reshape(1, -1),
                 n_neighbors=6
             )
 
-            book_names = [book_pivot.index[i] for i in suggestions[0]]
-            poster_urls = self.fetch_poster(suggestions)
+            indices = indices.flatten()   # 🔥 FIX (IMPORTANT)
 
-            return book_names, poster_urls
+            recommended_books = []
+            posters = []
+
+            for i in indices:
+                title = book_pivot.index[i]
+                recommended_books.append(title)
+
+                idx = np.where(final_rating['title'] == title)[0][0]
+                posters.append(final_rating.iloc[idx]['image_url'])
+
+            return recommended_books, posters
 
         except Exception as e:
             raise AppException(e, sys)
@@ -71,7 +65,7 @@ class Recommendation:
         obj.start_training_pipeline()
         st.success("Training Completed!")
 
-    # 🔹 Display Recommendations
+    # 🔹 Display Results
     def show_recommendations(self, selected_book):
         books, posters = self.recommend_book(selected_book)
 
@@ -81,6 +75,7 @@ class Recommendation:
 
         cols = st.columns(5)
 
+        # Skip first (same book)
         for i in range(1, 6):
             with cols[i - 1]:
                 st.text(books[i])
@@ -104,7 +99,11 @@ if __name__ == "__main__":
     with open("artifacts/serialized_objects/book_names.pkl", "rb") as f:
         book_names = pickle.load(f)
 
-    selected_book = st.selectbox("Select a book", book_names)
+    selected_book = st.selectbox(
+        "Select a book",
+        book_names
+    )
 
+    # Recommend button
     if st.button("Show Recommendations"):
         obj.show_recommendations(selected_book)
